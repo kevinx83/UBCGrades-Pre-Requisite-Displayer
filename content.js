@@ -1,97 +1,79 @@
 let currentUrl = window.location.href;
 let allCourses = [];
-let courseCode = null;  // Default to null, no course selected
+let courseCode = null;
+let dataLoaded = false;
 
-// Loads allCourses array 
+// Create and set up the info container
+let infoContainer = document.createElement('div');
+infoContainer.id = "course-info-container";
+infoContainer.style.position = 'fixed';
+infoContainer.style.bottom = '50px';
+infoContainer.style.left = '20px';
+infoContainer.style.padding = '15px';
+infoContainer.style.backgroundColor = '#fff';
+infoContainer.style.boxShadow = '0px 4px 6px rgba(0, 0, 0, 0.1)';
+infoContainer.style.zIndex = '9999';
+infoContainer.style.display = 'none'; // Hidden by default
+document.body.appendChild(infoContainer);
+
+// Load allCourses array and update course info when ready
 chrome.runtime.sendMessage({ type: "getAllCourses" }, (response) => {
     if (response) {
-        allCourses = response; // Now you have access to the data
+        allCourses = response;
+        dataLoaded = true;
+        checkAndInjectCourseInfo(); // Try to inject course info once data is loaded
     } else {
         console.error("Failed to retrieve allCourses");
     }
-
-    // Initial check for the course code when the page loads
-    const match = currentUrl.match(/(?:UBC[A-Z]-\d{4}[A-Z]-)?([A-Z]{3,4})-(\d{3})/);
-    courseCode = match ? match[1] + " " + match[2] : null;
-
-    // Show info based on the initial course code found
-    injectCourseInfo(courseCode);
 });
 
-// Checks for URL Changes (dynamic URL)
-setInterval(() => {
+// Use MutationObserver to detect URL changes
+const observer = new MutationObserver(() => {
     if (currentUrl !== window.location.href) {
         currentUrl = window.location.href;
-
-        const match = currentUrl.match(/(?:UBC[A-Z]-\d{4}[A-Z]-)?([A-Z]{3,4})-(\d{3})/);
-        courseCode = match ? match[1] + " " + match[2] : null;
-
-        injectCourseInfo(courseCode);
+        if (dataLoaded) {
+            checkAndInjectCourseInfo();
+        }
     }
-}, 1000); // Check every 1000 milliseconds (1 second)
+});
+observer.observe(document.body, { childList: true, subtree: true });
 
-// Injects course info (prereqs, coreqs, etc.) into text container
+// Function to check and inject course info
+function checkAndInjectCourseInfo() {
+    const match = currentUrl.match(/(?:UBC[A-Z]-\d{4}[A-Z]-)?([A-Z]{3,4})-(\d{3})/);
+    courseCode = match ? match[1] + " " + match[2] : null;
+    injectCourseInfo(courseCode);
+}
+
+// Inject course info (prereqs, coreqs, etc.) into the container
 function injectCourseInfo(courseCode) {
-    let infoContainer = document.getElementById("course-info-container");
-
-    // If the info container doesn't exist, create it
-    if (!infoContainer) {
-        infoContainer = document.createElement('div');
-        infoContainer.id = "course-info-container"; // Set an ID to toggle visibility later
-        infoContainer.style.position = 'fixed';
-        infoContainer.style.bottom = '50px';
-        infoContainer.style.left = '20px';
-        infoContainer.style.padding = '15px';
-        infoContainer.style.backgroundColor = '#fff';
-        infoContainer.style.boxShadow = '0px 4px 6px rgba(0, 0, 0, 0.1)';
-        infoContainer.style.zIndex = '9999';
-        infoContainer.style.display = 'none'; // Initially hidden
-
-        // Add course details (initial placeholders)
-        const name = document.createElement('p');
-        name.id = 'course-name';
-        name.innerHTML = `<strong>Course:</strong> No course selected`;
-        infoContainer.appendChild(name);
-
-        const description = document.createElement('p');
-        description.id = 'course-description';
-        description.innerHTML = `<strong>Description:</strong> N/A`;
-        infoContainer.appendChild(description);
-
-        const prereqs = document.createElement('p');
-        prereqs.id = 'course-prereqs';
-        prereqs.innerHTML = `<strong>Prerequisites:</strong> No prerequisites.`;
-        infoContainer.appendChild(prereqs);
-
-        const coreqs = document.createElement('p');
-        coreqs.id = 'course-coreqs';
-        coreqs.innerHTML = `<strong>Corequisites:</strong> No corequisites.`;
-        infoContainer.appendChild(coreqs);
-
-        // Append the info container to the body
-        document.body.appendChild(infoContainer);
-    }
-
     if (courseCode && allCourses.length > 0) {
         const course = allCourses.find(course => course.code === courseCode);
 
         if (course) {
-            // Update the info container with course details
-            document.getElementById('course-name').innerHTML = `<strong>Course:</strong> ${course.code}: ${course.name}`;
-            document.getElementById('course-description').innerHTML = `<strong>Description:</strong> ${course.desc}`;
-            document.getElementById('course-prereqs').innerHTML = `<strong>Prerequisites:</strong> ${course.prer || 'No prerequisites.'}`;
-            document.getElementById('course-coreqs').innerHTML = `<strong>Corequisites:</strong> ${course.crer || 'No corequisites.'}`;
+            infoContainer.innerHTML = `
+                <p><strong>Course:</strong> ${course.code}: ${course.name}</p>
+                <p><strong>Description:</strong> ${course.desc}</p>
+                <p><strong>Prerequisites:</strong> ${course.prer || 'No prerequisites.'}</p>
+                <p><strong>Corequisites:</strong> ${course.crer || 'No corequisites.'}</p>
+            `;
+        } else {
+            // Custom message for missing course data
+            infoContainer.innerHTML = `
+                <p><strong>Course:</strong> ${courseCode}</p>
+                <p>No data available for ${courseCode}.</p>
+            `;
         }
     } else {
-        // No course selected, show default message
-        document.getElementById('course-name').innerHTML = `<strong>Course:</strong> No course selected`;
-        document.getElementById('course-description').innerHTML = `<strong>Description:</strong> N/A`;
-        document.getElementById('course-prereqs').innerHTML = `<strong>Prerequisites:</strong> N/A`;
-        document.getElementById('course-coreqs').innerHTML = `<strong>Corequisites:</strong> N/A`;
+        // Default message when no course code or data is not loaded
+        infoContainer.innerHTML = `
+            <p><strong>Course:</strong> <em>No course selected</em></p>
+            <p><strong>Note:</strong> Please refresh the page if course info is not displaying</p>
+        `;
     }
 }
 
-// Create a toggle button if it doesn't exist
+// Create the toggle button and event listener (untoggled by default)
 let toggleButton = document.getElementById("toggle-course-info");
 if (!toggleButton) {
     toggleButton = document.createElement('button');
@@ -108,15 +90,12 @@ if (!toggleButton) {
     toggleButton.style.cursor = 'pointer';
     toggleButton.style.zIndex = '10000';
 
-    // Event listener to toggle visibility
+    // Initially, the button should toggle the course info visibility OFF (hidden)
     toggleButton.addEventListener('click', () => {
-        const infoContainer = document.getElementById("course-info-container");
-        if (infoContainer) {
-            // Toggle display of the course info container
-            infoContainer.style.display = infoContainer.style.display === 'none' ? 'block' : 'none';
-        }
+        const currentDisplay = infoContainer.style.display;
+        // Toggle the info container visibility
+        infoContainer.style.display = currentDisplay === 'none' ? 'block' : 'none';
     });
 
-    // Append the toggle button to the body
     document.body.appendChild(toggleButton);
 }
